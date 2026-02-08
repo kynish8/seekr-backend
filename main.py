@@ -45,7 +45,6 @@ async def offer(request: Request):
         type=data["type"]
     )
 
-
     pc = RTCPeerConnection(
         configuration=RTCConfiguration(
             iceServers=[
@@ -68,7 +67,6 @@ async def offer(request: Request):
         print("❌ DataChannel closed")
 
 
-
     @pc.on("track")
     async def on_track(track):
         if track.kind != "video":
@@ -77,7 +75,6 @@ async def offer(request: Request):
         track = relay.subscribe(track)
 
         while True:
-            frame = await track.recv()
             try:
                 frame = await track.recv()
             except MediaStreamError:
@@ -87,13 +84,8 @@ async def offer(request: Request):
             result = detector.detect(img)
             print(result)
 
-            try:
-                data_channel.send(json.dumps(result))
-            except Exception:
-                pass
             if data_channel.readyState == "open":
                 data_channel.send(json.dumps(result))
-
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
