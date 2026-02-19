@@ -46,6 +46,10 @@ Pygments==2.19.2
 pylibsrtp==0.12.0
 pyOpenSSL==25.3.0
 python-dotenv==1.2.1
+python-socketio==5.16.1
+python-engineio==4.13.1
+simple-websocket==1.1.0
+bidict==0.23.1
 python-multipart==0.0.20
 PyYAML==6.0.3
 regex==2026.1.15

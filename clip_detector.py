@@ -1,3 +1,6 @@
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context  # bypass corporate SSL proxy
+
 import torch
 import clip
 from PIL import Image
@@ -204,6 +207,38 @@ class CLIPDetector:
         if not stable:
             return {"label": "none", "score": 0.0}
 
+
+        return {
+            "label": detected_label,
+            "score": round(detected_score, 3),
+        }
+
+    def detect_single(self, frame_rgb):
+        crops = self._get_crops(frame_rgb)
+
+        detected_label = "none"
+        detected_score = 0.0
+
+        for crop in crops:
+            pil = Image.fromarray(crop)
+            image_tensor = self.preprocess(pil).unsqueeze(0).to(DEVICE)
+
+            image_features = self.model.encode_image(image_tensor)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+
+            scores = {
+                name: (image_features @ emb.T).item()
+                for name, emb in self.object_embeddings.items()
+            }
+
+            sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            best_label, best_score = sorted_scores[0]
+            second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0.0
+
+            if best_score > MIN_SIM and (best_score - second_score) > MARGIN:
+                if best_score > detected_score:
+                    detected_label = best_label
+                    detected_score = best_score
 
         return {
             "label": detected_label,

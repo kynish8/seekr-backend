@@ -1,40 +1,39 @@
 import fastapi
 import asyncio
-import time
-import torch
-import clip
-from PIL import Image
-from collections import deque
-import cv2
-from fastapi.responses import StreamingResponse
-from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaBlackhole
-from fastapi import Request
-from aiortc.contrib.media import MediaRelay
 import json
-from clip_detector import CLIPDetector,WINDOW_SIZE, OBJECTS, GLOBAL_NULLS 
+import socketio
+
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer
+from aiortc.contrib.media import MediaRelay
+from aiortc.mediastreams import MediaStreamError
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from aiortc.mediastreams import MediaStreamError
-from aiortc import RTCPeerConnection, RTCConfiguration, RTCIceServer
+from clip_detector import CLIPDetector
+from socket_server import sio
+import socket_server
 
+# Initialize CLIP detector (shared with socket_server to avoid loading twice)
 detector = CLIPDetector()
-app = fastapi.FastAPI()
+socket_server.detector = detector
 
+app = fastapi.FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],  # or ["*"] for dev
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+pcs = set()
+
+
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
-pcs = set()
 
 @app.post("/offer")
 async def offer(request: Request):
@@ -66,7 +65,6 @@ async def offer(request: Request):
     def on_close():
         print("❌ DataChannel closed")
 
-
     @pc.on("track")
     async def on_track(track):
         if track.kind != "video":
@@ -96,6 +94,10 @@ async def offer(request: Request):
         "type": pc.localDescription.type,
     }
 
+
+# wrap FastAPI with Socket.io so all non-socket HTTP requests pass through to app
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run("main:socket_app", host="0.0.0.0", port=3001)
