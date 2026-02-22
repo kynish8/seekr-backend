@@ -1,133 +1,44 @@
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context  # bypass corporate SSL proxy
 
+import numpy as np
 import torch
 import clip
 from PIL import Image
-import cv2
-from collections import deque
-from typing import Dict, List
+from typing import List
 
 DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
 MODEL_NAME = "ViT-B/16"
 
-PROCESS_EVERY = 1.0
-WINDOW_SIZE = 5
-REQUIRED_FRAMES = 3
+# Default detection thresholds (overridden per-object from object_bank)
+DEFAULT_THRESHOLD = 0.22
+DEFAULT_MARGIN = 0.04
 
-Z_THRESHOLD = 1.5
-MIN_SIM = 0.20
-MARGIN = 0.04
+from object_bank import GLOBAL_NULLS
 
-
-
-OBJECTS: Dict[str, Dict[str, List[str]]] = {
-    "spoon": {
-        "prompts": [
-            "a metal spoon",
-            "a spoon on a table",
-            "a spoon held in a hand",
-            "a spoon in a kitchen",
-            "a shiny metal spoon",
-            "a spoon next to a bowl",
-        ],
-        "negatives": [
-            "a fork",
-            "a knife",
-            "chopsticks",
-            "a metal rod",
-        ],
-    },
-
-    "dog": {
-        "prompts": [
-            "a dog",
-            "a puppy",
-            "a dog sitting on grass",
-            "a dog indoors",
-        ],
-        "negatives": [
-            "a cat",
-            "a stuffed animal",
-        ],
-    },
-    "person": {
-        "prompts": [
-            # Generic person
-            "a person",
-            "a human",
-            "a person indoors",
-
-            # Webcam / laptop context
-            "a person sitting at a desk",
-            "a person in front of a computer",
-            "a person using a laptop",
-            "a person looking at a screen",
-
-            # Face-focused
-            "a human face",
-            "a person facing the camera",
-            "a face looking at the camera",
-            "a person close to the camera",
-
-            # Upper body / framing
-            "a person from the shoulders up",
-            "a person sitting indoors facing forward",
-            "a person talking to a camera",
-
-            # Lighting & realism
-            "a realistic photo of a person",
-            "a webcam photo of a person",
-            "a low resolution webcam image of a person"
-        ],
-        "negatives": [
-            # Not a real person
-            "a photo of a screen",
-            "a reflection in a mirror",
-            "a mannequin",
-            "a doll",
-            "a statue",
-            "a cardboard cutout",
-
-            # Background-only
-            "an empty chair",
-            "a desk with no people",
-            "a room with no people",
-            "a computer screen",
-
-            # Non-human faces
-            "a cartoon character",
-            "an animated character",
-            "a drawing of a face",
-            "an emoji face",
-            "a robot face",
-
-            # Pets / misc
-            "a dog",
-            "a cat",
-            "a stuffed animal"
-        ],
-    }
-}
-
-GLOBAL_NULLS = [
-    "background clutter",
-    "a table surface",
-    "an empty room",
-]
 
 class CLIPDetector:
     def __init__(self):
+        print(f"[clip] loading {MODEL_NAME} on {DEVICE}...")
         self.model, self.preprocess = clip.load(MODEL_NAME, device=DEVICE)
         self.model.eval()
         torch.set_grad_enabled(False)
 
-        self.object_embeddings = {}
-        self.null_embeddings = {}
+        # Active object state (set per-round)
+        self._active_object_id: str | None = None
+        self._active_pos_emb: torch.Tensor | None = None
+        self._active_neg_emb: torch.Tensor | None = None
+        self._active_threshold: float = DEFAULT_THRESHOLD
+        self._active_margin: float = DEFAULT_MARGIN
 
-        self.history = deque(maxlen=WINDOW_SIZE)
+        self._warmup()
+        print("[clip] ready")
 
-        self._build_embeddings()
+    def _warmup(self):
+        """Run a dummy inference so the first real call isn't slow."""
+        dummy = Image.fromarray(np.zeros((224, 224, 3), dtype=np.uint8))
+        tensor = self.preprocess(dummy).unsqueeze(0).to(DEVICE)
+        self.model.encode_image(tensor)
 
     def _embed_text(self, prompts: List[str]) -> torch.Tensor:
         tokens = clip.tokenize(prompts).to(DEVICE)
@@ -136,112 +47,81 @@ class CLIPDetector:
         features /= features.norm(dim=-1, keepdim=True)
         return features
 
-    def _build_embeddings(self):
-        for name, cfg in OBJECTS.items():
-            self.object_embeddings[name] = self._embed_text(cfg["prompts"])
+    def set_active_object(self, object_id: str, obj_config: dict):
+        """
+        Pre-encode embeddings for the current round's object.
+        Call this once at round:start — not on every frame.
 
-            nulls = cfg.get("negatives", []) + GLOBAL_NULLS
-            self.null_embeddings[name] = self._embed_text(nulls)
+        obj_config is the dict from object_bank.OBJECTS[object_id].
+        """
+        self._active_object_id = object_id
+        self._active_pos_emb = self._embed_text(obj_config["prompts"])
+        nulls = obj_config.get("negatives", []) + GLOBAL_NULLS
+        self._active_neg_emb = self._embed_text(nulls)
+        self._active_threshold = obj_config.get("threshold", DEFAULT_THRESHOLD)
+        self._active_margin = obj_config.get("margin", DEFAULT_MARGIN)
+        print(f"[clip] active object set: {object_id}")
 
-    def _get_crops(self, img):
-        h, w, _ = img.shape
-        crops = []
+    def detect_for_active_object(self, frame_rgb: np.ndarray) -> dict:
+        """
+        Run CLIP inference for the currently active object.
+        Returns:
+          label       - object_id if detected, else "none"
+          score       - raw positive similarity (0-1)
+          confidence  - normalized 0-1 value for UI feedback ("getting warmer")
+        This is called in a thread executor — keep it pure and thread-safe.
+        """
+        if self._active_pos_emb is None:
+            return {"label": "none", "score": 0.0, "confidence": 0.0}
 
-        # full frame
-        crops.append(img)
+        pil = Image.fromarray(frame_rgb)
+        tensor = self.preprocess(pil).unsqueeze(0).to(DEVICE)
 
-        # center crop (important for small objects)
-        # crops.append(img[h//4:3*h//4, w//4:3*w//4])
+        image_features = self.model.encode_image(tensor)
+        image_features /= image_features.norm(dim=-1, keepdim=True)
 
-        return crops
+        pos_score = (image_features @ self._active_pos_emb.T).item()
+        neg_score = (image_features @ self._active_neg_emb.T).item()
+        margin = pos_score - neg_score
 
+        detected = pos_score > self._active_threshold and margin > self._active_margin
 
-    def detect(self, frame_bgr):
-        crops = self._get_crops(frame_bgr)
-
-        detected_label = "none"
-        detected_score = 0.0
-
-        # ---- tuned thresholds ----
-        MIN_SIM = 0.20
-        MARGIN = 0.04
-
-        for crop in crops:
-            # crop is already RGB
-            pil = Image.fromarray(crop)
-            image_tensor = self.preprocess(pil).unsqueeze(0).to(DEVICE)
-
-            image_features = self.model.encode_image(image_tensor)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-
-            # ---- similarity scores ----
-            scores = {
-                name: (image_features @ emb.T).item()
-                for name, emb in self.object_embeddings.items()
-            }
-
-            # ---- DEBUG (remove later) ----
-            best = max(scores.items(), key=lambda x: x[1])
-
-            # ---- margin-based decision ----
-            sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-            best_label, best_score = sorted_scores[0]
-            second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0.0
-
-            if (
-                best_score > MIN_SIM
-                and (best_score - second_score) > MARGIN
-            ):
-                if best_score > detected_score:
-                    detected_label = best_label
-                    detected_score = best_score
-
-        # ---- temporal smoothing ----
-        self.history.append(detected_label)
-
-        stable = (
-            detected_label != "none"
-            and self.history.count(detected_label) >= REQUIRED_FRAMES
-        )
-
-        if not stable:
-            return {"label": "none", "score": 0.0}
-
+        # Normalize confidence for UI: 0 at threshold, 1 well above it
+        # Uses a simple linear scale over a 0.1 window above the threshold
+        raw_confidence = (pos_score - self._active_threshold) / 0.10
+        confidence = round(min(max(raw_confidence, 0.0), 1.0), 3)
 
         return {
-            "label": detected_label,
-            "score": round(detected_score, 3),
+            "label": self._active_object_id if detected else "none",
+            "score": round(pos_score, 3),
+            "confidence": confidence,
         }
 
-    def detect_single(self, frame_rgb):
-        crops = self._get_crops(frame_rgb)
+    def detect_single(self, frame_rgb: np.ndarray, object_id: str, obj_config: dict) -> dict:
+        """
+        One-shot detection for a specific object without changing active state.
+        Useful for testing individual objects.
+        """
+        pos_emb = self._embed_text(obj_config["prompts"])
+        nulls = obj_config.get("negatives", []) + GLOBAL_NULLS
+        neg_emb = self._embed_text(nulls)
+        threshold = obj_config.get("threshold", DEFAULT_THRESHOLD)
+        margin_thresh = obj_config.get("margin", DEFAULT_MARGIN)
 
-        detected_label = "none"
-        detected_score = 0.0
+        pil = Image.fromarray(frame_rgb)
+        tensor = self.preprocess(pil).unsqueeze(0).to(DEVICE)
 
-        for crop in crops:
-            pil = Image.fromarray(crop)
-            image_tensor = self.preprocess(pil).unsqueeze(0).to(DEVICE)
+        image_features = self.model.encode_image(tensor)
+        image_features /= image_features.norm(dim=-1, keepdim=True)
 
-            image_features = self.model.encode_image(image_tensor)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
+        pos_score = (pos_emb @ image_features.T).item()
+        neg_score = (neg_emb @ image_features.T).item()
+        margin = pos_score - neg_score
 
-            scores = {
-                name: (image_features @ emb.T).item()
-                for name, emb in self.object_embeddings.items()
-            }
-
-            sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-            best_label, best_score = sorted_scores[0]
-            second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0.0
-
-            if best_score > MIN_SIM and (best_score - second_score) > MARGIN:
-                if best_score > detected_score:
-                    detected_label = best_label
-                    detected_score = best_score
+        detected = pos_score > threshold and margin > margin_thresh
 
         return {
-            "label": detected_label,
-            "score": round(detected_score, 3),
+            "label": object_id if detected else "none",
+            "score": round(pos_score, 3),
+            "margin": round(margin, 3),
         }
-

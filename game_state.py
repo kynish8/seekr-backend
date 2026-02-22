@@ -3,23 +3,6 @@ import random
 import string
 from typing import Dict
 
-POINTS_MAP = {1: 100, 2: 60, 3: 30}
-POINTS_MIN = 10
-CLIP_MIN_SCORE = 0.20
-
-SAMPLE_PROMPTS = [
-    "FIND SOMETHING RED",
-    "FIND SOMETHING SOFT",
-    "FIND SOMETHING WITH WHEELS",
-    "FIND SOMETHING YOU WEAR",
-    "FIND SOMETHING SHINY",
-    "FIND SOMETHING GREEN",
-    "FIND SOMETHING ROUND",
-    "FIND SOMETHING MADE OF WOOD",
-    "FIND SOMETHING THAT OPENS",
-    "FIND SOMETHING OLDER THAN YOU",
-]
-
 
 def generate_room_code() -> str:
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -32,17 +15,16 @@ def make_player(name: str) -> dict:
         "name": n,
         "initials": n[0] if n else "?",
         "score": 0,
-        "photoUrl": None,
     }
 
 
-def make_round(prompt: str, round_id: str, time_per_round: int) -> dict:
+def make_round(round_id: str, object_id: str, display_name: str) -> dict:
     return {
         "id": round_id,
-        "prompt": prompt,
-        "submissions": {},       # player_id -> photoUrl (str or None)
-        "submissionOrder": [],   # player_ids in order received (internal)
-        "timeRemaining": time_per_round,
+        "objectId": object_id,
+        "displayName": display_name,
+        "winnerId": None,
+        "winnerName": None,
     }
 
 
@@ -50,12 +32,17 @@ def make_room(code: str, host_player: dict, host_sid: str) -> dict:
     return {
         "code": code,
         "players": [host_player],
-        "settings": {"rounds": 5, "timePerRound": 60},
+        "settings": {
+            "pointsToWin": 5,
+            "roundTimeout": 60,   # seconds before round auto-skips
+        },
         "hostId": host_player["id"],
         "hostSid": host_sid,
-        "phase": "lobby",
-        "rounds": [],
-        "currentRound": 0,
+        "phase": "lobby",           # lobby | game | results
+        "currentRound": None,       # active round dict
+        "roundNumber": 0,
+        "usedObjectIds": [],        # prevents repeating objects in a session
+        "roundTimerTask": None,     # asyncio.Task handle
     }
 
 
