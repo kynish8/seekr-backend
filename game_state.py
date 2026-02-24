@@ -1,7 +1,6 @@
 import uuid
 import random
 import string
-from typing import Dict
 
 
 def generate_room_code() -> str:
@@ -34,19 +33,12 @@ def make_room(code: str, host_player: dict, host_sid: str) -> dict:
         "players": [host_player],
         "settings": {
             "pointsToWin": 5,
-            "roundTimeout": 60,   # seconds before round auto-skips
+            "roundTimeout": 60,
         },
         "hostId": host_player["id"],
         "hostSid": host_sid,
-        "phase": "lobby",           # lobby | game | results
-        "currentRound": None,       # active round dict
+        "phase": "lobby",
+        "currentRound": None,
         "roundNumber": 0,
-        "usedObjectIds": [],        # prevents repeating objects in a session
-        "roundTimerTask": None,     # asyncio.Task handle
+        "usedObjectIds": [],
     }
-
-
-# In-memory state
-rooms: Dict[str, dict] = {}         # room_code -> room dict
-sid_to_room: Dict[str, str] = {}    # socket_id -> room_code
-sid_to_player: Dict[str, str] = {}  # socket_id -> player_id

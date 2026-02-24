@@ -1,16 +1,13 @@
 import os
+
 import fastapi
 import socketio
-
 from fastapi.middleware.cors import CORSMiddleware
 
+import redis_state
 from clip_detector import CLIPDetector
 from socket_server import sio
 import socket_server
-
-# Initialize CLIP detector once and inject into socket_server
-detector = CLIPDetector()
-socket_server.detector = detector
 
 app = fastapi.FastAPI()
 
@@ -26,6 +23,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def startup():
+    await redis_state.init()
+    # Load CLIP inside the worker process (after AsyncRedisManager forks)
+    detector = CLIPDetector()
+    socket_server.detector = detector
 
 
 @app.get("/")

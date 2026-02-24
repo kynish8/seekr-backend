@@ -33,6 +33,7 @@ Pygments==2.19.2
 python-dotenv==1.2.1
 python-socketio==5.16.1
 python-engineio==4.13.1
+redis[asyncio]>=5.0.0
 simple-websocket==1.1.0
 bidict==0.23.1
 python-multipart==0.0.20

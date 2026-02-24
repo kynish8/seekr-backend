@@ -7,7 +7,11 @@ import clip
 from PIL import Image
 from typing import List
 
-DEVICE = "mps" if torch.backends.mps.is_available() else "cpu"
+DEVICE = (
+    "cuda" if torch.cuda.is_available()
+    else "mps" if torch.backends.mps.is_available()
+    else "cpu"
+)
 MODEL_NAME = "ViT-B/16"
 
 # Default detection thresholds (overridden per-object from object_bank)
