@@ -139,7 +139,7 @@ async def _start_next_round(room_code: str):
         used = set()
         available = get_all_ids()
 
-    object_id = available[0]  # HARDCODED TEST: sequential order
+    object_id = random.choice(available)
     used.add(object_id)
     room["usedObjectIds"] = list(used)
 

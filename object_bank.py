@@ -8,54 +8,8 @@ Each entry has:
   margin       - min gap between positive and negative score
 """
 
-_ALL_OBJECTS: dict = {
-    # ── HARDCODED TEST: only sunglasses, backpack, thermos ─────────
-    "sunglasses": {
-        "displayName": "SUNGLASSES",
-        "prompts": [
-            "a pair of sunglasses",
-            "sunglasses",
-            "someone holding sunglasses",
-            "dark tinted glasses",
-        ],
-        "negatives": ["reading glasses", "goggles", "a phone", "a headband", "a watch"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "backpack": {
-        "displayName": "BACKPACK",
-        "prompts": [
-            "a backpack",
-            "a school backpack",
-            "someone holding a backpack",
-            "a backpack with straps",
-        ],
-        "negatives": ["a handbag", "a suitcase", "a pillow", "a jacket", "a sleeping bag"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "thermos": {
-        "displayName": "THERMOS",
-        "prompts": [
-            "a thermos",
-            "an insulated bottle",
-            "someone holding a thermos",
-            "a vacuum flask",
-        ],
-        "negatives": ["a water bottle", "a speaker", "a flashlight", "a can", "a vase"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-}
-
-# Fixed spawn order for test
-_TEST_ORDER = ["sunglasses", "backpack", "thermos"]
-
-OBJECTS: dict = _ALL_OBJECTS
-
-"""
-# ── COMMENTED OUT FOR HARDCODED TEST ──────────────────────────────
-ORIGINAL_OBJECTS: dict = {
+OBJECTS: dict = {
+    # ── Existing items ──────────────────────────────────────────────
     "water_bottle": {
         "displayName": "WATER BOTTLE",
         "prompts": [
@@ -1650,7 +1604,6 @@ ORIGINAL_OBJECTS: dict = {
         "margin": 0.04,
     },
 }
-"""
 
 GLOBAL_NULLS = [
     "background clutter",
@@ -1666,4 +1619,4 @@ def get_object(object_id: str) -> dict:
 
 
 def get_all_ids() -> list[str]:
-    return list(_TEST_ORDER)
+    return list(OBJECTS.keys())
