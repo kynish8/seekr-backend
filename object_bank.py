@@ -9,7 +9,7 @@ Each entry has:
 """
 
 _ALL_OBJECTS: dict = {
-    # ── HARDCODED TEST: only sunglasses, backpack, thermos ─────────
+    # ── HARDCODED TEST: sunglasses, backpack, thermos, pencil, cushion, water_bottle ──
     "sunglasses": {
         "displayName": "SUNGLASSES",
         "prompts": [
@@ -46,10 +46,46 @@ _ALL_OBJECTS: dict = {
         "threshold": 0.22,
         "margin": 0.04,
     },
+    "pencil": {
+        "displayName": "PENCIL",
+        "prompts": [
+            "a pencil",
+            "a wooden pencil",
+            "someone holding a pencil",
+            "a pencil on a desk",
+        ],
+        "negatives": ["a pen", "a marker", "a stick", "a straw", "a chopstick"],
+        "threshold": 0.22,
+        "margin": 0.04,
+    },
+    "cushion": {
+        "displayName": "COUCH CUSHION",
+        "prompts": [
+            "a couch cushion",
+            "a seat cushion",
+            "someone holding a cushion",
+            "a sofa cushion",
+        ],
+        "negatives": ["a pillow", "a blanket", "a towel", "a bag", "a mat"],
+        "threshold": 0.22,
+        "margin": 0.04,
+    },
+    "water_bottle": {
+        "displayName": "WATER BOTTLE",
+        "prompts": [
+            "a water bottle",
+            "a plastic water bottle",
+            "a reusable water bottle",
+            "someone holding a water bottle",
+        ],
+        "negatives": ["a coffee mug", "a glass", "a vase", "a phone", "a spoon"],
+        "threshold": 0.22,
+        "margin": 0.04,
+    },
 }
 
 # Fixed spawn order for test
-_TEST_ORDER = ["sunglasses", "backpack", "thermos"]
+_TEST_ORDER = ["sunglasses", "backpack", "thermos", "pencil", "cushion", "water_bottle"]
 
 OBJECTS: dict = _ALL_OBJECTS
 
