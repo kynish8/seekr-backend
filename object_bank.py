@@ -87,8 +87,6 @@ _ALL_OBJECTS: dict = {
 # Fixed spawn order for test
 _TEST_ORDER = ["sunglasses", "backpack", "thermos", "pencil", "cushion", "water_bottle"]
 
-OBJECTS: dict = ORIGINAL_OBJECTS
-
 ORIGINAL_OBJECTS: dict = {
     "water_bottle": {
         "displayName": "WATER BOTTLE",
@@ -1684,6 +1682,8 @@ ORIGINAL_OBJECTS: dict = {
         "margin": 0.04,
     },
 }
+
+OBJECTS: dict = ORIGINAL_OBJECTS
 
 GLOBAL_NULLS = [
     "background clutter",
