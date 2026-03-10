@@ -4,6 +4,7 @@ import fastapi
 import socketio
 from fastapi.middleware.cors import CORSMiddleware
 
+import metrics
 import redis_state
 from clip_detector import CLIPDetector
 from socket_server import sio
@@ -36,6 +37,11 @@ async def startup():
 @app.get("/")
 def read_root():
     return {"status": "ok"}
+
+
+@app.get("/stats")
+async def get_stats():
+    return await metrics.get_all_stats()
 
 
 # Wrap FastAPI with Socket.io — all non-socket HTTP requests pass through

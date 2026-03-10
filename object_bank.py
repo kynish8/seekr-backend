@@ -87,10 +87,8 @@ _ALL_OBJECTS: dict = {
 # Fixed spawn order for test
 _TEST_ORDER = ["sunglasses", "backpack", "thermos", "pencil", "cushion", "water_bottle"]
 
-OBJECTS: dict = _ALL_OBJECTS
+OBJECTS: dict = ORIGINAL_OBJECTS
 
-"""
-# ── COMMENTED OUT FOR HARDCODED TEST ──────────────────────────────
 ORIGINAL_OBJECTS: dict = {
     "water_bottle": {
         "displayName": "WATER BOTTLE",
@@ -1686,7 +1684,6 @@ ORIGINAL_OBJECTS: dict = {
         "margin": 0.04,
     },
 }
-"""
 
 GLOBAL_NULLS = [
     "background clutter",
@@ -1702,4 +1699,4 @@ def get_object(object_id: str) -> dict:
 
 
 def get_all_ids() -> list[str]:
-    return list(_TEST_ORDER)
+    return list(OBJECTS.keys())

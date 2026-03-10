@@ -4,11 +4,13 @@ import concurrent.futures
 import io
 import os
 import random
+import time
 
 import numpy as np
 import socketio
 from PIL import Image
 
+import metrics
 import redis_state
 from game_state import (
     generate_room_code,
@@ -46,6 +48,7 @@ _room_timer_tasks: dict[str, asyncio.Task] = {}
 # Local sid lookups — kept in sync with Redis for fast access from hot paths
 _local_sid_to_player: dict[str, str] = {}  # sid → player_id
 _local_sid_to_room: dict[str, str] = {}    # sid → room_code
+_frame_count: dict[str, int] = {}          # sid → count (for confidence sampling)
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -80,6 +83,7 @@ async def _stop_player_worker(sid: str):
     if task:
         task.cancel()
     player_queues.pop(sid, None)
+    _frame_count.pop(sid, None)
 
 
 async def _stop_all_room_workers(room_code: str):
@@ -118,6 +122,12 @@ async def _frame_worker(sid: str, room_code: str):
             print(f"[clip] worker error for {sid}: {e}")
             continue
 
+        # Metrics: count every frame, sample confidence every 10th
+        await metrics.incr("frames_processed")
+        _frame_count[sid] = _frame_count.get(sid, 0) + 1
+        if _frame_count[sid] % 10 == 0:
+            await metrics.hist_observe("frame_confidence", result["confidence"])
+
         # Live confidence bar for this player only
         await sio.emit("frame:result", result, to=sid)
 
@@ -139,7 +149,7 @@ async def _start_next_round(room_code: str):
         used = set()
         available = get_all_ids()
 
-    object_id = available[0]  # HARDCODED TEST: sequential order
+    object_id = random.choice(available)
     used.add(object_id)
     room["usedObjectIds"] = list(used)
 
@@ -152,6 +162,10 @@ async def _start_next_round(room_code: str):
 
     if detector:
         detector.set_active_object(object_id, obj)
+
+    await metrics.incr("round_started")
+    await metrics.object_incr("selected", object_id)
+    await metrics.set_timestamp("round_started", room_code)
 
     timeout = room["settings"]["roundTimeout"]
     await redis_state.set_room(room_code, room)
@@ -214,6 +228,16 @@ async def _handle_round_win(sid: str, room_code: str):
     if timer:
         timer.cancel()
 
+    # Metrics
+    round_ts = await metrics.get_timestamp("round_started", room_code)
+    if round_ts:
+        win_secs = time.time() - round_ts
+        await metrics.hist_observe("round_win_time_seconds", win_secs)
+        await metrics.hist_observe(f"object_find_time:{current_round['objectId']}", win_secs)
+        await metrics.del_timestamp("round_started", room_code)
+    await metrics.incr("round_won")
+    await metrics.object_incr("found", current_round["objectId"])
+
     print(f"[game] round won by {winner['name']} in {room_code} (score: {winner['score']})")
 
     await sio.emit(
@@ -255,6 +279,10 @@ async def _run_round_timeout(room_code: str, round_id: str, timeout_seconds: int
     if not claimed:
         return
 
+    await metrics.incr("round_timed_out")
+    await metrics.object_incr("timed_out", current_round["objectId"])
+    await metrics.del_timestamp("round_started", room_code)
+
     print(f"[game] round {round_id} timed out in {room_code}")
 
     await sio.emit(
@@ -279,6 +307,15 @@ async def _end_game(room_code: str, winner_id: str, winner_name: str):
     room["phase"] = "results"
     await redis_state.set_room(room_code, room)
 
+    # Metrics
+    game_ts = await metrics.get_timestamp("game_started", room_code)
+    if game_ts:
+        await metrics.hist_observe("game_duration_seconds", time.time() - game_ts)
+        await metrics.del_timestamp("game_started", room_code)
+    await metrics.incr("game_completed")
+    await metrics.hist_observe("game_rounds_played", room["roundNumber"])
+    await metrics.gauge_decr("players_in_game", len(room["players"]))
+
     await _stop_all_room_workers(room_code)
 
     await sio.emit(
@@ -299,11 +336,13 @@ async def _end_game(room_code: str, winner_id: str, winner_name: str):
 @sio.event
 async def connect(sid, environ):
     print(f"[socket] connect {sid}")
+    await metrics.gauge_incr("connections_active")
 
 
 @sio.event
 async def disconnect(sid):
     print(f"[socket] disconnect {sid}")
+    await metrics.gauge_decr("connections_active")
 
     await _stop_player_worker(sid)
 
@@ -320,11 +359,21 @@ async def disconnect(sid):
     if not room:
         return
 
+    was_in_game = room.get("phase") == "game"
+
     room["players"] = [p for p in room["players"] if p["id"] != player_id]
 
     if not room["players"]:
         await redis_state.delete_room(code)
+        await metrics.gauge_decr("rooms_active")
+        if room.get("phase") == "lobby":
+            await metrics.incr("lobby_abandoned")
+        elif was_in_game:
+            await metrics.incr("game_abandoned")
         return
+
+    if was_in_game:
+        await metrics.gauge_decr("players_in_game")
 
     # Re-assign host if the host disconnected
     if room["hostSid"] == sid:
@@ -359,6 +408,10 @@ async def room_create(sid, player_name: str):
     _local_sid_to_player[sid] = player["id"]
 
     await sio.enter_room(sid, code)
+
+    await metrics.incr("lobby_created")
+    await metrics.gauge_incr("rooms_active")
+    await metrics.set_timestamp("lobby_created", code)
 
     await sio.emit("room:created", {"roomCode": code}, to=sid)
     await sio.emit(
@@ -464,6 +517,17 @@ async def game_start(sid):
     room["usedObjectIds"] = []
     room["currentRound"] = None
     await redis_state.set_room(code, room)
+
+    # Metrics
+    player_count = len(room["players"])
+    lobby_ts = await metrics.get_timestamp("lobby_created", code)
+    if lobby_ts:
+        await metrics.hist_observe("lobby_wait_seconds", time.time() - lobby_ts)
+        await metrics.del_timestamp("lobby_created", code)
+    await metrics.incr("game_started")
+    await metrics.hist_observe("lobby_player_count", player_count)
+    await metrics.gauge_incr("players_in_game", player_count)
+    await metrics.set_timestamp("game_started", code)
 
     # Start a frame worker for every player connected to this process
     for player in room["players"]:
