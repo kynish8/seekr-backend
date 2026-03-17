@@ -8,84 +8,18 @@ Each entry has:
   margin       - min gap between positive and negative score
 """
 
-_ALL_OBJECTS: dict = {
-    # ── HARDCODED TEST: sunglasses, backpack, thermos, pencil, cushion, water_bottle ──
-    "sunglasses": {
-        "displayName": "SUNGLASSES",
-        "prompts": [
-            "a pair of sunglasses",
-            "sunglasses",
-            "someone holding sunglasses",
-            "dark tinted glasses",
-        ],
-        "negatives": ["reading glasses", "goggles", "a phone", "a headband", "a watch"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "backpack": {
-        "displayName": "BACKPACK",
-        "prompts": [
-            "a backpack",
-            "a school backpack",
-            "someone holding a backpack",
-            "a backpack with straps",
-        ],
-        "negatives": ["a handbag", "a suitcase", "a pillow", "a jacket", "a sleeping bag"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "thermos": {
-        "displayName": "THERMOS",
-        "prompts": [
-            "a thermos",
-            "an insulated bottle",
-            "someone holding a thermos",
-            "a vacuum flask",
-        ],
-        "negatives": ["a water bottle", "a speaker", "a flashlight", "a can", "a vase"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "pencil": {
-        "displayName": "PENCIL",
-        "prompts": [
-            "a pencil",
-            "a wooden pencil",
-            "someone holding a pencil",
-            "a pencil on a desk",
-        ],
-        "negatives": ["a pen", "a marker", "a stick", "a straw", "a chopstick"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "cushion": {
-        "displayName": "COUCH CUSHION",
-        "prompts": [
-            "a couch cushion",
-            "a seat cushion",
-            "someone holding a cushion",
-            "a sofa cushion",
-        ],
-        "negatives": ["a pillow", "a blanket", "a towel", "a bag", "a mat"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-    "water_bottle": {
-        "displayName": "WATER BOTTLE",
-        "prompts": [
-            "a water bottle",
-            "a plastic water bottle",
-            "a reusable water bottle",
-            "someone holding a water bottle",
-        ],
-        "negatives": ["a coffee mug", "a glass", "a vase", "a phone", "a spoon"],
-        "threshold": 0.22,
-        "margin": 0.04,
-    },
-}
+# _ALL_OBJECTS: dict = {
+#     # ── HARDCODED TEST: sunglasses, backpack, thermos, pencil, cushion, water_bottle ──
+#     "sunglasses": { ... },
+#     "backpack": { ... },
+#     "thermos": { ... },
+#     "pencil": { ... },
+#     "cushion": { ... },
+#     "water_bottle": { ... },
+# }
 
 # Fixed spawn order for test
-_TEST_ORDER = ["sunglasses", "backpack", "thermos", "pencil", "cushion", "water_bottle"]
+_TEST_ORDER = ["pen", "backpack", "sunglasses", "water_bottle"]
 
 ORIGINAL_OBJECTS: dict = {
     "water_bottle": {
@@ -1683,7 +1617,8 @@ ORIGINAL_OBJECTS: dict = {
     },
 }
 
-OBJECTS: dict = ORIGINAL_OBJECTS
+# OBJECTS: dict = ORIGINAL_OBJECTS  # commented out – using filtered set below
+OBJECTS: dict = {k: ORIGINAL_OBJECTS[k] for k in ["pen", "backpack", "sunglasses", "water_bottle"]}
 
 GLOBAL_NULLS = [
     "background clutter",
