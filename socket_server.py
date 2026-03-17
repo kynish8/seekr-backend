@@ -142,9 +142,16 @@ async def _start_next_round(room_code: str):
     if not room or room["phase"] != "game":
         return
 
-    fixed_order = ["pen", "backpack", "sunglasses", "water_bottle"]
-    round_index = room["roundNumber"] % len(fixed_order)
-    object_id = fixed_order[round_index]
+    used = set(room["usedObjectIds"])
+    available = [oid for oid in get_all_ids() if oid not in used]
+
+    if not available:
+        used = set()
+        available = get_all_ids()
+
+    object_id = random.choice(available)
+    used.add(object_id)
+    room["usedObjectIds"] = list(used)
 
     obj = get_object(object_id)
     round_num = room["roundNumber"] + 1

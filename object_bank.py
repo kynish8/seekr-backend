@@ -1618,7 +1618,10 @@ ORIGINAL_OBJECTS: dict = {
 }
 
 # OBJECTS: dict = ORIGINAL_OBJECTS  # commented out – using filtered set below
-OBJECTS: dict = {k: ORIGINAL_OBJECTS[k] for k in ["pen", "backpack", "sunglasses", "water_bottle"]}
+OBJECTS: dict = {k: ORIGINAL_OBJECTS[k] for k in [
+    "pen", "backpack", "sunglasses", "water_bottle",
+    "phone", "nail_clipper", "toothbrush", "headphones", "coffee_mug", "eyeglasses",
+]}
 
 GLOBAL_NULLS = [
     "background clutter",
